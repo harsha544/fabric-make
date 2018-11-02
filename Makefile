@@ -101,7 +101,7 @@ PROJECT_FILES = $(shell git ls-files  | grep -v ^test | grep -v ^unit-test | \
 	grep -v ^.git | grep -v ^examples | grep -v ^devenv | grep -v .png$ | \
 	grep -v ^LICENSE | grep -v ^vendor )
 RELEASE_TEMPLATES = $(shell git ls-files | grep "release/templates")
-IMAGES = peer orderer ccenv buildenv testenv tools
+IMAGES = peer orderer ccenv buildenv tools
 RELEASE_PLATFORMS = windows-amd64 darwin-amd64 linux-amd64 linux-s390x linux-ppc64le
 RELEASE_PKGS = configtxgen cryptogen idemixgen discover configtxlator peer orderer
 
@@ -178,26 +178,24 @@ tools-docker: $(BUILD_DIR)/image/tools/$(DUMMY)
 
 buildenv: $(BUILD_DIR)/image/buildenv/$(DUMMY)
 
-$(BUILD_DIR)/image/testenv/$(DUMMY): $(BUILD_DIR)/image/buildenv/$(DUMMY)
-testenv: $(BUILD_DIR)/image/testenv/$(DUMMY)
 ccenv: $(BUILD_DIR)/image/ccenv/$(DUMMY)
 
 .PHONY: integration-test
 integration-test: gotool.ginkgo ccenv docker-thirdparty
 	./scripts/run-integration-tests.sh
 
-unit-test: unit-test-clean peer-docker testenv ccenv
+unit-test: unit-test-clean peer-docker ccenv
 	cd unit-test && docker-compose up --abort-on-container-exit --force-recreate && docker-compose down
 
 unit-tests: unit-test
 
-enable_ci_only_tests: testenv
+enable_ci_only_tests:
 	cd unit-test && docker-compose up --abort-on-container-exit --force-recreate && docker-compose down
 
-verify: unit-test-clean peer-docker testenv
+verify: unit-test-clean peer-docker
 	cd unit-test && JOB_TYPE=VERIFY docker-compose up --abort-on-container-exit --force-recreate && docker-compose down
 
-profile: unit-test-clean peer-docker testenv
+profile: unit-test-clean peer-docker
 	cd unit-test && JOB_TYPE=PROFILE docker-compose up --abort-on-container-exit --force-recreate && docker-compose down
 
 # Generates a string to the terminal suitable for manual augmentation / re-issue, useful for running tests by hand
@@ -269,10 +267,6 @@ $(BUILD_DIR)/image/orderer/payload:    $(BUILD_DIR)/docker/bin/orderer \
 				$(BUILD_DIR)/sampleconfig.tar.bz2
 $(BUILD_DIR)/image/buildenv/payload:   $(BUILD_DIR)/gotools.tar.bz2 \
 				$(BUILD_DIR)/docker/gotools/bin/protoc-gen-go
-$(BUILD_DIR)/image/testenv/payload:    $(BUILD_DIR)/docker/bin/orderer \
-				$(BUILD_DIR)/docker/bin/peer \
-				$(BUILD_DIR)/sampleconfig.tar.bz2 \
-				images/testenv/install-softhsm2.sh
 
 $(BUILD_DIR)/image/%/payload:
 	mkdir -p $@
