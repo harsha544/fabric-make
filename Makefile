@@ -41,6 +41,7 @@
 #     use in the local machine.
 #   - docker-thirdparty - pulls thirdparty images (kafka,zookeeper,couchdb)
 #   - docker-tag-latest - re-tags the images made by 'make docker' with the :latest tag
+#   - docker-tag-stable - re-tags the images made by 'make docker' with the :stable tag
 #   - help-docs - generate the command reference docs
 
 BASE_VERSION = 1.4.0
@@ -56,13 +57,9 @@ PROJECT_NAME = $(PROJECT_NAME)/fabric
 else
 PROJECT_NAME = hyperledger/fabric
 endif
-EXPERIMENTAL ?= true
 
 BUILD_DIR ?= .build
-
-ifeq ($(EXPERIMENTAL),true)
-GO_TAGS += experimental
-endif
+NEXUS_REPO = nexus3.hyperledger.org:10001/hyperledger
 
 EXTRA_VERSION ?= $(shell git rev-parse --short HEAD)
 PROJECT_VERSION=$(BASE_VERSION)-snapshot-$(EXTRA_VERSION)
@@ -79,7 +76,6 @@ METADATA_VAR += BaseVersion=$(BASEIMAGE_RELEASE)
 METADATA_VAR += BaseDockerLabel=$(BASE_DOCKER_LABEL)
 METADATA_VAR += DockerNamespace=$(DOCKER_NS)
 METADATA_VAR += BaseDockerNamespace=$(BASE_DOCKER_NS)
-METADATA_VAR += Experimental=$(EXPERIMENTAL)
 
 GO_LDFLAGS = $(patsubst %,-X $(PKGNAME)/common/metadata.%,$(METADATA_VAR))
 
@@ -94,8 +90,7 @@ K := $(foreach exec,$(EXECUTABLES),\
 	$(if $(shell which $(exec)),some string,$(error "No $(exec) in PATH: Check dependencies")))
 
 GOSHIM_DEPS = $(shell ./scripts/goListFiles.sh $(PKGNAME)/core/chaincode/shim)
-JAVASHIM_DEPS =  $(shell git ls-files core/chaincode/shim/java)
-PROTOS = $(shell git ls-files *.proto | grep -v vendor)
+PROTOS = $(shell git ls-files *.proto | grep -Ev 'vendor/|testdata/')
 # No sense rebuilding when non production code is changed
 PROJECT_FILES = $(shell git ls-files  | grep -v ^test | grep -v ^unit-test | \
 	grep -v ^.git | grep -v ^examples | grep -v ^devenv | grep -v .png$ | \
@@ -185,18 +180,17 @@ integration-test: gotool.ginkgo ccenv docker-thirdparty
 	./scripts/run-integration-tests.sh
 
 unit-test: unit-test-clean peer-docker ccenv
-	cd unit-test && docker-compose up --abort-on-container-exit --force-recreate && docker-compose down
+	unit-test/run.sh
 
 unit-tests: unit-test
 
-enable_ci_only_tests:
-	cd unit-test && docker-compose up --abort-on-container-exit --force-recreate && docker-compose down
+enable_ci_only_tests: unit-test
 
-verify: unit-test-clean peer-docker
-	cd unit-test && JOB_TYPE=VERIFY docker-compose up --abort-on-container-exit --force-recreate && docker-compose down
+verify: export JOB_TYPE=VERIFY
+verify: unit-test
 
-profile: unit-test-clean peer-docker
-	cd unit-test && JOB_TYPE=PROFILE docker-compose up --abort-on-container-exit --force-recreate && docker-compose down
+profile: export JOB_TYPE=PROFILE
+profile: unit-test
 
 # Generates a string to the terminal suitable for manual augmentation / re-issue, useful for running tests by hand
 test-cmd:
@@ -311,7 +305,6 @@ $(BUILD_DIR)/goshim.tar.bz2: $(GOSHIM_DEPS)
 $(BUILD_DIR)/sampleconfig.tar.bz2: $(shell find sampleconfig -type f)
 	(cd sampleconfig && tar -jc *) > $@
 
-$(BUILD_DIR)/javashim.tar.bz2: $(JAVASHIM_DEPS)
 $(BUILD_DIR)/protos.tar.bz2: $(PROTOS)
 
 $(BUILD_DIR)/%.tar.bz2:
@@ -425,6 +418,12 @@ docker-tag-latest: $(IMAGES:%=%-docker-tag-latest)
 %-docker-tag-latest:
 	$(eval TARGET = ${patsubst %-docker-tag-latest,%,${@}})
 	docker tag $(DOCKER_NS)/fabric-$(TARGET):$(DOCKER_TAG) $(DOCKER_NS)/fabric-$(TARGET):latest
+
+docker-tag-stable: $(IMAGES:%=%-docker-tag-stable)
+
+%-docker-tag-stable:
+	$(eval TARGET = ${patsubst %-docker-tag-stable,%,${@}})
+	docker tag $(DOCKER_NS)/fabric-$(TARGET):$(DOCKER_TAG) $(DOCKER_NS)/fabric-$(TARGET):stable
 
 .PHONY: clean
 clean: docker-clean unit-test-clean release-clean
